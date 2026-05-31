@@ -18,7 +18,7 @@ class DepartmentPlan(BaseModel):
         description="A validation of the predicted disaster severity (HIGH/MEDIUM/LOW) with context-based reasoning."
     )
 
-def _call_gemini_agent(system_instruction: str, data: dict) -> dict:
+def _call_gemini_agent(system_instruction: str, data: dict, past_insights: list[str] = None) -> dict:
     """
     Private helper that formats the input payload, communicates with the Gemini API
     using the official google-genai SDK, and enforces the Pydantic return schema.
@@ -43,7 +43,7 @@ def _call_gemini_agent(system_instruction: str, data: dict) -> dict:
         print(f"[INFO] GEMINI_API_KEY missing. Generating mock plan for {location} [{disaster_type}]...")
         
         if "Emergency Response" in system_instruction or "Chief Officer of Emergency Response" in system_instruction:
-            return {
+            res = {
                 "action_plan": [
                     f"Deploy search and rescue teams (boats, water rescue crafts) to flooded sectors of {location}.",
                     f"Establish emergency medical triage stations at designated high points.",
@@ -53,7 +53,7 @@ def _call_gemini_agent(system_instruction: str, data: dict) -> dict:
                 "severity_verification": f"HIGH - Rainfall of {max_rain} mm has overloaded primary drainage infrastructure in {location}, confirming immediate life safety threat."
             }
         elif "Civil Defense" in system_instruction or "Director of Civil Defense" in system_instruction:
-            return {
+            res = {
                 "action_plan": [
                     f"Establish evacuation logistics and open municipal shelters across {location}.",
                     "Activate regional warning sirens and dispatch public transport buses to low-lying zones.",
@@ -63,7 +63,7 @@ def _call_gemini_agent(system_instruction: str, data: dict) -> dict:
                 "severity_verification": f"HIGH - Severe weather conditions ({max_rain} mm rainfall, {max_wind} km/h winds) require regional evacuation and population coordination."
             }
         else: # Public Works
-            return {
+            res = {
                 "action_plan": [
                     f"Deploy municipal debris clearing machinery to restore primary roadway corridors in {location}.",
                     f"Activate emergency storm-water pumps at maximum output.",
@@ -73,7 +73,18 @@ def _call_gemini_agent(system_instruction: str, data: dict) -> dict:
                 "severity_verification": f"HIGH - Storm accumulation of {max_rain} mm rain and {max_wind} km/h wind exceeds standard drainage capacities. Restoring transport access is critical."
             }
 
-    # Format the current disaster management payload as a clean prompt for the real LLM call
+        # Dynamically append mock corrections to show human-in-the-loop self-correction works in mock mode
+        if past_insights:
+            for insight in past_insights:
+                # Append insight to action plan
+                res["action_plan"].append(f"[Reflective Adaptation] {insight}")
+                # Inject rule info into alert message and severity verification
+                res["alert_message"] += f" (Adhering to: {insight})"
+                res["severity_verification"] += f" [Verified rule: {insight}]"
+                
+        return res
+
+    # Format the prompt, including past insights/reflection rules if present
     prompt = (
         f"Analyze the following disaster scenario data:\n"
         f"Location: {location}\n"
@@ -89,6 +100,11 @@ def _call_gemini_agent(system_instruction: str, data: dict) -> dict:
         f"Current Weather Station Context:\n"
         f"{weather_context}\n"
     )
+
+    if past_insights:
+        prompt += f"\nCritical Instruction: You MUST strictly incorporate the following reflection rules into your planning and alerts:\n"
+        for rule in past_insights:
+            prompt += f"- {rule}\n"
 
     client = genai.Client()
     response = client.models.generate_content(
@@ -115,7 +131,7 @@ def _call_gemini_agent(system_instruction: str, data: dict) -> dict:
             "severity_verification": f"Fallback activated due to parsing error: {str(e)}"
         }
 
-def generate_emergency_response_plan(data: dict) -> dict:
+def generate_emergency_response_plan(data: dict, past_insights: list[str] = None) -> dict:
     """
     Generates an emergency action plan using an aggressive first-responder persona.
     Focuses on immediate search & rescue, casualty minimization, and medical dispatch.
@@ -127,9 +143,9 @@ def generate_emergency_response_plan(data: dict) -> dict:
         "teams (boats, helicopters, crews) directly to hotspots. Keep your action plan highly actionable, "
         "tactical, and focused on the first 0-24 hours."
     )
-    return _call_gemini_agent(system_instruction, data)
+    return _call_gemini_agent(system_instruction, data, past_insights)
 
-def generate_civil_defense_plan(data: dict) -> dict:
+def generate_civil_defense_plan(data: dict, past_insights: list[str] = None) -> dict:
     """
     Generates a civil defense plan using a regional civil strategist persona.
     Focuses on evacuation zoning, public shelters, and food/water distribution.
@@ -140,9 +156,9 @@ def generate_civil_defense_plan(data: dict) -> dict:
         "managing resources (food, blankets, clean drinking water, medicines), and organizing public transport "
         "or evacuation routes. Your alerts should be clear, calming, and detailed about where citizens must go."
     )
-    return _call_gemini_agent(system_instruction, data)
+    return _call_gemini_agent(system_instruction, data, past_insights)
 
-def generate_public_works_plan(data: dict) -> dict:
+def generate_public_works_plan(data: dict, past_insights: list[str] = None) -> dict:
     """
     Generates an infrastructure recovery plan using a municipal public works engineer persona.
     Focuses on road debris clearing, bridge/dam safety, power grids, and utilities.
@@ -153,4 +169,4 @@ def generate_public_works_plan(data: dict) -> dict:
         "working with utility companies to isolate or restore power grids and water supplies, and managing critical "
         "municipal assets (like drainage gates or pumping stations). Your plan is highly engineering-focused."
     )
-    return _call_gemini_agent(system_instruction, data)
+    return _call_gemini_agent(system_instruction, data, past_insights)

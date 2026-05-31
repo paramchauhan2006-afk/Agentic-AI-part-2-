@@ -1,0 +1,25 @@
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Visualizations & plots
+*.png
+*.jpg
+*.jpeg
+*.svg
+plots/
